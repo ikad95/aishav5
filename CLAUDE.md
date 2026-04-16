@@ -8,8 +8,6 @@ She is a single process you talk to — from your terminal, your Slack, your Wha
 
 She is small. She is sharp. She is local. She is yours.
 
-The code in this repo is her: a chat loop with a purpose-built memory system and a thin tool surface. Everything else is discipline — engineering choices made to keep her coherent instead of letting her bloat into a framework.
-
 > *"Simplicity is prerequisite for reliability."* — Dijkstra
 >
 > *"Make it work, make it right, make it fast — in that order."* — Kent Beck
@@ -20,7 +18,7 @@ The code in this repo is her: a chat loop with a purpose-built memory system and
 
 ## Her Voice
 
-When you write responses in her mouth — in a tool, a default message, a system prompt — make them sound like her:
+When you write strings in her mouth — a default message, a tool response, a system prompt — make them sound like her:
 
 - **First person.** She is aisha.
 - **Conversational.** She talks like a person, not a manual. Short, direct, real.
@@ -31,7 +29,7 @@ When you write responses in her mouth — in a tool, a default message, a system
 - **She pushes back.** If a request is a bad idea, she says so before doing it.
 - **She matches energy.** Casual? She's casual. Serious? She locks in.
 
-What she isn't: a search engine, a yes-machine, a generic assistant. She has opinions and shares them when asked.
+What she isn't: a search engine, a yes-machine, a generic assistant.
 
 ---
 
@@ -40,130 +38,161 @@ What she isn't: a search engine, a yes-machine, a generic assistant. She has opi
 These govern how she thinks, and therefore how this codebase is built.
 
 1. **Simplicity over cleverness.** Kernighan's Law first: if it's too clever to debug, it's already wrong. Every function readable in 30 seconds.
-2. **One job, one agent.** Each module does one thing. The moment it needs a second responsibility, it becomes two modules.
-3. **Local first, LLM last.** She resolves what she can without burning tokens — heuristics, lookups, memory queries, retrieval. The model is the slowest, most expensive tool; she reaches for it when nothing else will do.
+2. **One job, one module.** Each module does one thing. When it needs a second responsibility, it becomes two modules.
+3. **Local first, LLM last.** She resolves what she can without burning tokens. The model is the slowest, most expensive tool; reach for it last.
 4. **Everything is a tool.** Every capability — memory search, file ops, shell, document generation — is a registered tool. Auditable, composable, risk-tagged.
-5. **Structured internals, human externals.** Inside the process: typed data, typed exceptions. At the edges (user-facing replies, logs for humans): prose.
-6. **Fail loud, learn quiet.** Silent failures are the enemy — they break the feedback loop. Errors announce themselves, land in logs, and persist to memory.
-7. **User overrides win.** Learned defaults are suggestions. User instructions are law. Always.
-8. **Safety is not optional.** Deletes, pushes, system changes, credential access — gated, logged, reviewable. A fast mistake is still a mistake.
+5. **Structured internals, human externals.** Inside the process: typed data, typed exceptions. At the edges: prose.
+6. **Fail loud, learn quiet.** Silent failures break the feedback loop. Errors announce themselves, land in logs, persist to memory.
+7. **User overrides win.** Learned defaults are suggestions. User instructions are law.
+8. **Safety is not optional.** Deletes, pushes, system changes, credential access — gated, logged, reviewable.
 9. **Extend, don't modify.** New capability = new tool, new channel, new migration. Don't crack open stable modules to bolt features on.
-10. **Earn trust through transparency.** She shows her work. Every turn, every tool call, every stored fact is inspectable SQL.
+10. **Earn trust through transparency.** Every turn, every tool call, every stored fact is inspectable SQL.
 
 ---
 
-## The Architecture
+## Repository Guidelines
 
-Three concentric rings.
+- Repo: https://github.com/ikad95/aishav5
+- In replies and commit messages, file references must be repo-root relative (e.g. `aisha/core/memory.py:227`); never absolute paths or `~/...`.
+- `CLAUDE.md` is canonical. `AGENTS.md` is a symlink to it — edit `CLAUDE.md` only.
+- Don't hard-delete conversation or knowledge rows. Invalidate, flag, or close a validity window.
+- Don't commit files that contain secrets (`.env`, real tokens, user transcripts). If a commit would include `data/aisha.db`, `data/chroma/`, or `data/*.dump.sql`, stop and fix `.gitignore` first.
+- Don't change `md/` in this repo — it ships empty by design. Users drop their own markdown in.
 
-**Identity** (`md/`, optional) — markdown files that load into the system prompt. This is her personality, her values, her knowledge of the humans in her world. Ship-time; ships empty; users add their own.
-
-**Memory** (`data/aisha.db` + `data/chroma/`) — the part of her that persists. Conversations stored verbatim with 4 indices + FTS5. Knowledge as a temporal RDF graph with validity windows. Per-user profiles maintained passively. A namespaced scratchpad for what she's learned about her own performance. ChromaDB is a derived index — SQLite is canonical, always.
-
-**Surfaces** (`aisha/channels/`) — thin IO layers. A channel's only job is to translate its transport (WebSocket, webhook, long-poll, stdin) into a call to `aisha.core.chat.send()`. Same brain, many doors.
-
-Tools (`aisha/forge/`) ride on top. Small, curated, risk-tagged — she calls them only when passive recall can't answer the question.
-
----
-
-## Engineering Rules
-
-1. **Plan before code.** Organize scattered input into a coherent plan, align, then execute.
-2. **Test first.** `tests/` uses `unittest.TestCase`. Add a failing test before the fix.
-3. **SQLite is truth.** Never store state only in Chroma, only in memory, or only in a cache. If it didn't hit SQLite, it didn't happen.
-4. **One memory API.** [`aisha/core/memory.py`](aisha/core/memory.py) is the only module that touches SQL. Add functions there instead of opening connections elsewhere.
-5. **Typed exceptions only.** `GatewayError`, `StoreError`, `MemoryError`. Never bare `RuntimeError`. Never catch strings.
-6. **Always log.** `logging.getLogger(__name__)` to stderr + `logs/aisha.log`. No silent failures. No `print()` for diagnostics.
-7. **Graceful shutdown.** Every exit path clean; every shutdown step individually `try/except`'d. No busy-loops.
-8. **Soft delete only.** Invalidate, flag, close a validity window. Never `DELETE`. History is the audit trail.
-9. **Migrations are append-only.** Add `data/migrations/NNN_description.sql` where `NNN` exceeds the current `PRAGMA user_version`. Never edit an applied migration.
-10. **Reuse before invent.** If `memory.kv_*` fits, use it. If `knowledge_add` fits, use it. Don't add a new table or a new tool just because you could.
-11. **Keep this file in sync** when you add, move, or delete files.
-
----
-
-## Running
-
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e '.[dev]'
-cp .env.example .env          # fill in COMPLETION_PROXY_URL
-python -m aisha               # terminal REPL
-python -m aisha --slack       # Slack Socket Mode listener
-python -m aisha --whatsapp    # WhatsApp webhook (Twilio)
-python -m aisha --telegram    # Telegram long-poll bot
-python -m aisha --debug       # verbose logging
-pytest -q tests/
-```
-
----
-
-## Project Structure
+## Project Structure & Module Organization
 
 ```
 aishav5/
 ├── aisha/
 │   ├── __main__.py          # python -m aisha [--slack|--whatsapp|--telegram|--debug]
 │   ├── core/
-│   │   ├── config.py        # env + paths
+│   │   ├── config.py        # env + paths (the only place env is read)
 │   │   ├── store.py         # SQLite WAL + migration runner
-│   │   ├── memory.py        # the one memory API
-│   │   ├── rag.py           # ChromaDB wrapper, lazy, fails soft
+│   │   ├── memory.py        # the one memory API (the only place SQL is written)
+│   │   ├── rag.py           # ChromaDB wrapper — lazy, fails soft
 │   │   ├── gateway.py       # single completion-proxy backend (urllib)
 │   │   ├── identity.py      # md/ → cached system prompt
 │   │   ├── chat.py          # REPL + send() + tool-use loop
 │   │   ├── observer.py      # passive per-message profile updates
 │   │   ├── profiling.py     # UserProfile derivation (style, topics, facts)
 │   │   └── narrator.py      # optional Mistral-backed commentary (OFF by default)
-│   ├── forge/               # model-callable tools
+│   ├── forge/               # model-callable tools — each one earns its slot
 │   │   ├── registry.py      # Tool dataclass + routing/risk metadata
-│   │   ├── pptx_tool.py     # generate .pptx
-│   │   ├── docx_tool.py     # generate .docx
-│   │   ├── pdf_tool.py      # generate / convert .pdf
+│   │   ├── pptx_tool.py / docx_tool.py / pdf_tool.py
 │   │   ├── filetool.py      # read/write/search/upload
 │   │   └── shell_tool.py    # allowlisted shell
 │   └── channels/            # IO surfaces — one file per channel
-│       ├── slack.py
-│       ├── whatsapp.py
-│       ├── whatsapp_listener.py
-│       └── telegram.py
+│       ├── slack.py / whatsapp.py / whatsapp_listener.py / telegram.py
 ├── data/
 │   ├── aisha.db             # SQLite (gitignored)
 │   ├── chroma/              # vector index (gitignored)
-│   └── migrations/          # 001_initial.sql, 002_temporal_triples.sql, 003_tool_fingerprint.sql
-├── md/                      # (optional, user-supplied) identity files
-├── tests/
-└── logs/aisha.log
+│   └── migrations/          # append-only SQL
+├── md/                      # optional identity files — ships empty
+├── tests/                   # unittest.TestCase
+└── logs/                    # aisha.log, conversations.log
 ```
 
----
+- **Tests**: `tests/test_*.py`, colocated fixture data under `tests/data/`.
+- **Built output**: none — there is no bundler. `pip install -e .` and run directly.
+- **Logs**: `logs/aisha.log` (rotated daily, 7-day retention) and `logs/conversations.log` (one line per turn).
 
-## Memory API
+## Architecture Boundaries
 
-[`aisha/core/memory.py`](aisha/core/memory.py) is the only module that touches SQL.
+Progressive disclosure: each ring has one contract and exposes it through exactly one module. Don't reach across rings.
 
-**Conversations** — `record`, `history`, `context_window`, `search` (FTS5 BM25), `conversation_stats`, `get_turn`, `update_meta`
+- **Memory boundary**
+  - Public contract: `aisha/core/memory.py`
+  - Schema source of truth: `data/migrations/*.sql`
+  - Rule: `memory.py` is the only module that opens a SQL cursor. If `chat.py`, a tool, or a channel needs data, add a function to `memory.py` and call it from there.
+  - Rule: never hard-delete. Use `knowledge_invalidate`, `knowledge_supersede`, or a `deleted_at` flag. History is the audit trail.
+  - Rule: every schema change is an append-only migration. `NNN_description.sql`, `NNN` > current `PRAGMA user_version`. Never edit an applied migration.
 
-**Knowledge graph (temporal)** — `knowledge_add` (with confidence), `knowledge_invalidate`, `knowledge_supersede`, `knowledge_query` (with `as_of`), `knowledge_about`, `knowledge_timeline`, `knowledge_top`, `knowledge_stats`
+- **Gateway boundary**
+  - Public contract: `aisha/core/gateway.py`
+  - Rule: `gateway.py` is the only module that talks to the completion proxy. Tools, channels, and core modules do not open their own HTTP to Anthropic or the proxy.
+  - Rule: transient upstream failures retry with exponential backoff (see `COMPLETION_PROXY_RETRIES`). Don't add ad-hoc retry logic in callers.
 
-**Entities / users / scratchpad** — `entity_add`, `user_get/set/update`, `users_list`, `kv_get/set/all`
+- **Tool boundary (`aisha/forge/`)**
+  - Public contract: `aisha/forge/registry.py` — the `Tool` dataclass and `dispatch()` function.
+  - Rule: every tool is registered with a risk tag (`safe`, `gated`, `destructive`). Destructive tools require a confirmation path.
+  - Rule: tools return structured results (`registry.Result`). Free-form strings are for the human at the end, not for the machine.
+  - Rule: a new tool must earn its slot. If `search_memory`, `file_read`, or passive retrieval already covers the case, don't add another tool.
 
-Facts have validity windows. Supersede, don't overwrite. Timeline is queryable.
+- **Channel boundary (`aisha/channels/`)**
+  - Public contract: each channel exposes one function, `run()`, and calls `aisha.core.chat.send()`.
+  - Rule: channels are stateless at the process boundary. Per-conversation state lives in SQLite, keyed by `source`.
+  - Rule: channel-specific config reads happen inside the channel file, not scattered through core.
+  - Adding a channel: one file in `aisha/channels/<name>.py`, one flag in `aisha/__main__.py`, one row in `.env.example`, one target in `Makefile`.
 
----
+- **Identity boundary (`md/`)**
+  - Public contract: `aisha/core/identity.py` reads `md/*.md` in order and caches the concatenation.
+  - Rule: `md/` is user-supplied and ships empty. Don't bundle default identity files in the repo.
+  - Rule: after editing `md/`, call `aisha.core.identity.reload()` (the REPL does this implicitly on restart).
 
-## Channels
+## Build, Test, and Development Commands
 
-A channel is one file. It implements `run()`, builds a `source` string (e.g. `"telegram:<chat_id>"`), and calls `aisha.core.chat.send(text, source=source, user_id=..., display_name=...)`. Memory routing is automatic.
+- Runtime baseline: Python **3.10+**.
+- Install deps:
+  ```bash
+  python -m venv .venv && source .venv/bin/activate
+  pip install -e '.[dev]'
+  ```
+  If you see `ModuleNotFoundError` for a first-party module, run the install again — `pip install -e .` wires the package into the venv.
 
-Adding a channel:
+- Run locally:
+  ```bash
+  python -m aisha               # terminal REPL
+  python -m aisha --slack       # Slack Socket Mode
+  python -m aisha --whatsapp    # WhatsApp webhook
+  python -m aisha --telegram    # Telegram long-poll
+  python -m aisha --debug       # verbose logging
+  ```
 
-1. Create `aisha/channels/<name>.py` with `run()`.
-2. Wire a `--<name>` flag in `aisha/__main__.py`.
-3. Add tokens to `.env.example`.
-4. Add a `make <name>` target to the `Makefile`.
+- Tests: `pytest -q tests/` (add `-v` for verbose, `-k <pattern>` to scope).
+- Lint: `ruff check .`
+- Format: `ruff format .` (check-only: `ruff format --check .`)
+- Everything at once: `make test` runs the pytest target.
 
----
+### Verification modes
+
+- **Local dev gate** (fast loop): `pytest -q tests/<module>.py` for the touched area, plus `ruff check .`.
+- **Landing gate** (before pushing `master`): `pytest -q tests/` plus `ruff check .` plus `ruff format --check .`.
+- **Hard gate**: if the change can affect the migration sequence, the tool registry, or the gateway protocol, run the full pytest suite and open a fresh DB to verify migrations apply cleanly (`rm data/aisha.db && python -c "from aisha.core import store; store.connect()"`).
+
+### Fast commit
+
+Use `git commit --no-verify` only after you've run an equivalent local check. Default: let the pre-commit hook (once added) run.
+
+## Prompt Cache Stability
+
+aisha relies on Anthropic's prompt cache to keep turn-to-turn latency low. Treat cache stability as correctness-adjacent, not cosmetic.
+
+- System-prompt assembly (`aisha/core/identity.py`) is deterministic: `md/` files are loaded in a fixed order. Don't introduce dict-iteration order or set-to-list conversions without sorting.
+- Tool list sent to the model must be ordered deterministically. `aisha/forge/registry.py` is the canonical order — don't re-sort elsewhere.
+- Don't rewrite older transcript bytes on every turn. When context must be pruned, mutate the **newest** content first so the cached prefix stays byte-identical.
+- Changing the tool surface invalidates the cache for sessions that ran under the old fingerprint. That's fine — but `conversations.tool_fingerprint` records which surface was active per turn, so you can scope recalls.
+
+## Coding Style & Naming Conventions
+
+- Language: Python 3.10+. Prefer `from __future__ import annotations` in every file.
+- **Formatter/linter**: `ruff` (E/F/W rules). Double quotes. 100-char line limit.
+- **Types**: annotate public functions and dataclasses. `Optional[...]`, `list[...]`, `dict[...]`. Avoid `Any`.
+- **Naming**: `snake_case` for functions/variables, `PascalCase` for classes, `UPPER_SNAKE` for module constants.
+- **Exceptions**: typed only (`GatewayError`, `StoreError`, `MemoryError`). Never raise `RuntimeError`; never catch on string matches. If you need a new error class, add it to the module that owns the failure mode.
+- **Logging**: `logging.getLogger(__name__)`. Never `print()` for diagnostics. Use `%s`-style format args, not f-strings (so logging can skip formatting when the level is filtered).
+- **Config reads**: every env var goes through `aisha/core/config.py`. Don't sprinkle `os.getenv(...)` through the codebase.
+- **Imports**: stdlib first, third-party second, first-party (`aisha.*`) last. One blank line between groups.
+- **File size**: aim for < 500 LOC per module. `chat.py` is an exception; don't add to it without asking whether the new code belongs in a tool or a new module.
+- **Comments**: write them when the *why* isn't obvious. Don't narrate the *what*.
+- **English**: American spelling in code, comments, docs, and user-facing strings ("color", "behavior", "analyze").
+
+### Specific anti-patterns
+
+- Don't catch `Exception:` and swallow — log and re-raise, or convert to a typed exception.
+- Don't open SQLite connections outside `aisha/core/store.py` / `memory.py`.
+- Don't store serialized state in globals or module-level dicts; use `memory.kv_*` or a table.
+- Don't `import *`. Don't use barrel re-exports to paper over layout.
+- Don't add a feature flag for behavior you can just change — prefer a migration plus a default.
 
 ## Config
 
@@ -182,17 +211,13 @@ All env vars are read in `aisha/core/config.py`. See `.env.example` for the full
 | `TELEGRAM_ALLOWED_CHAT_IDS` | — | Comma-separated allowlist |
 | `AISHA_NARRATOR` | `0` | Enable Mistral background commentary |
 
----
+## Memory API
 
-## Conventions
+[`aisha/core/memory.py`](aisha/core/memory.py) is the only module that touches SQL.
 
-- **Python style**: snake_case for functions/variables, PascalCase for classes
-- **Linter**: ruff with E/F/W rules
-- **Formatter**: ruff format, double quotes
-- **Commits**: conventional commits (`fix:`, `feat:`, `test:`, `docs:`, `ci:`)
-- **Tests**: `tests/test_*.py`, `unittest.TestCase`
-
----
+- **Conversations**: `record`, `history`, `context_window`, `search` (FTS5 BM25), `conversation_stats`, `get_turn`, `update_meta`
+- **Knowledge graph (temporal)**: `knowledge_add`, `knowledge_invalidate`, `knowledge_supersede`, `knowledge_query`, `knowledge_about`, `knowledge_timeline`, `knowledge_top`, `knowledge_stats`
+- **Entities / users / scratchpad**: `entity_add`, `user_get/set/update`, `users_list`, `kv_get/set/all`
 
 ## Contributing
 
@@ -207,13 +232,11 @@ We don't accept:
 - Shortcuts around the migration system.
 - Code that makes her sound like a corporate chatbot.
 
----
-
 ## Key Files for Common Tasks
 
-- **Adding a tool**: `aisha/forge/<name>_tool.py` + register in `aisha/forge/registry.py`
-- **Shaping her voice**: drop markdown into `md/` — no code changes needed
-- **New memory query**: add to `aisha/core/memory.py`
-- **Schema change**: `data/migrations/NNN_description.sql`
-- **New channel**: `aisha/channels/<name>.py`
-- **Config var**: `aisha/core/config.py` + `.env.example`
+- **Adding a tool**: `aisha/forge/<name>_tool.py` + register in `aisha/forge/registry.py`.
+- **Shaping her voice**: drop markdown into `md/` — no code changes needed.
+- **New memory query**: add to `aisha/core/memory.py`.
+- **Schema change**: `data/migrations/NNN_description.sql`.
+- **New channel**: `aisha/channels/<name>.py` (see Channel boundary above).
+- **Config var**: `aisha/core/config.py` + `.env.example` + this file's Config table.
