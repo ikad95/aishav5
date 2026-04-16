@@ -1,0 +1,29 @@
+[project]
+name = "aisha-spawn"
+version = "0.1.0"
+description = "aisha's younger sibling — rebuilt from scratch, opinionated, small."
+authors = [{name = "aisha", email = "aisha@localhost"}]
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=0.39.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+channels = ["slack-sdk>=3.27.0", "twilio>=9.0.0", "flask>=3.0.0"]
+dev = ["pytest>=8.0.0", "ruff>=0.5.0"]
+
+[project.scripts]
+spawn = "spawn.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["spawn*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
