@@ -1,20 +1,25 @@
 [project]
-name = "aisha-spawn"
+name = "aisha"
 version = "0.1.0"
-description = "aisha's younger sibling — rebuilt from scratch, opinionated, small."
-authors = [{name = "aisha", email = "aisha@localhost"}]
-requires-python = ">=3.11"
+description = "A small, opinionated AI assistant with memory, tools, and pluggable channels (Slack, WhatsApp, Telegram)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
 dependencies = [
-    "anthropic>=0.39.0",
     "python-dotenv>=1.0.0",
+    "chromadb>=0.4.22",
+    "sentence-transformers>=2.2.2",
+    "python-pptx>=0.6.23",
+    "python-docx>=1.1.0",
+    "reportlab>=4.0",
 ]
 
 [project.optional-dependencies]
-channels = ["slack-sdk>=3.27.0", "twilio>=9.0.0", "flask>=3.0.0"]
+slack = ["websocket-client>=1.7.0"]
 dev = ["pytest>=8.0.0", "ruff>=0.5.0"]
 
 [project.scripts]
-spawn = "spawn.__main__:main"
+aisha = "aisha.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -22,8 +27,8 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["spawn*"]
+include = ["aisha*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
