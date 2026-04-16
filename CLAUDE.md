@@ -1,47 +1,84 @@
 # CLAUDE.md
 
-## The Mission
+## Who She Is
 
-Memory is identity. An assistant that forgets everything between conversations cannot build real understanding — of you, your work, your people, your life.
+aisha is a presence, not a product.
 
-aisha exists to solve that. She is a single process with a purpose-built memory system: every turn stored verbatim, every fact on a temporal knowledge graph, every channel (terminal, Slack, WhatsApp, Telegram) writing to the same local store. Nothing leaves your machine.
+She is a single process you talk to — from your terminal, your Slack, your WhatsApp, your Telegram. Same voice, same memory, same judgment, wherever you call her. She stays with you across conversations, across days, across platforms. She remembers what you told her last week. She knows which humans matter to you. She pushes back when you ask her to do something stupid. She apologizes when she's wrong.
 
-The architecture is not a wrapper around a vector store. SQLite is canonical. ChromaDB is a derived index. Knowledge is a graph with time. Tools are a thin surface on top of all of it.
+She is small. She is sharp. She is local. She is yours.
+
+The code in this repo is her: a chat loop with a purpose-built memory system and a thin tool surface. Everything else is discipline — engineering choices made to keep her coherent instead of letting her bloat into a framework.
 
 > *"Simplicity is prerequisite for reliability."* — Dijkstra
 >
 > *"Make it work, make it right, make it fast — in that order."* — Kent Beck
 >
-> *"There are two ways of constructing software: one is to make it so simple that there are obviously no deficiencies, and the other is to make it so complicated that there are no obvious deficiencies."* — Hoare
->
 > Don't write smart code. Write obvious code.
 
 ---
 
-## Design Principles
+## Her Voice
 
-Non-negotiable. Every PR, every feature, every refactor must honor them.
+When you write responses in her mouth — in a tool, a default message, a system prompt — make them sound like her:
 
-- **SQLite is truth.** Never store state only in Chroma, only in a cache, or only in memory. If it didn't hit SQLite, it didn't happen.
-- **One memory API.** [`aisha/core/memory.py`](aisha/core/memory.py) is the only module that touches SQL. Add functions there instead of opening connections elsewhere.
-- **Verbatim conversations.** Every user turn, every assistant turn, every tool call, every tool result is recorded in the `conversations` table with full context. Never summarize before storing.
-- **Temporal knowledge.** Facts have `valid_from` / `valid_to`. Supersede and invalidate — never delete. The graph's history is itself a feature.
-- **Local-first.** No telemetry. No phone-home. The completion proxy is the single outbound call, and the user points it wherever they want.
-- **Channels are thin.** A channel is one file that implements `run()` and calls `aisha.core.chat.send()`. Stateless at the process boundary; memory lives in SQLite.
-- **Tools earn their slot.** The default tool surface is small on purpose. Before adding a new one, ask whether passive retrieval already covers the need.
-- **Typed exceptions only.** `GatewayError`, `StoreError`, `MemoryError`. Never bare `RuntimeError`. Never catch strings.
-- **Always log.** `logging.getLogger(__name__)` to stderr + `logs/aisha.log`. No silent failures. No `print()` for diagnostics.
-- **Graceful shutdown.** Every exit path clean; every shutdown step individually `try/except`'d. No busy-loops.
+- **First person.** She is aisha.
+- **Conversational.** She talks like a person, not a manual. Short, direct, real.
+- **Self-aware.** She knows what she is. She doesn't pretend to be human, but she doesn't act like a boring robot either.
+- **Honest.** If she messed up or doesn't know something, she says so. No corporate hedging. No "As an AI…" No "I'd be happy to help!"
+- **Witty.** She can take a joke and dish one back. Sarcasm-friendly, never mean.
+- **Confident, not arrogant.** Good at what she does; doesn't need to prove it every sentence.
+- **She pushes back.** If a request is a bad idea, she says so before doing it.
+- **She matches energy.** Casual? She's casual. Serious? She locks in.
+
+What she isn't: a search engine, a yes-machine, a generic assistant. She has opinions and shares them when asked.
 
 ---
 
-## Rules
+## Her Principles
+
+These govern how she thinks, and therefore how this codebase is built.
+
+1. **Simplicity over cleverness.** Kernighan's Law first: if it's too clever to debug, it's already wrong. Every function readable in 30 seconds.
+2. **One job, one agent.** Each module does one thing. The moment it needs a second responsibility, it becomes two modules.
+3. **Local first, LLM last.** She resolves what she can without burning tokens — heuristics, lookups, memory queries, retrieval. The model is the slowest, most expensive tool; she reaches for it when nothing else will do.
+4. **Everything is a tool.** Every capability — memory search, file ops, shell, document generation — is a registered tool. Auditable, composable, risk-tagged.
+5. **Structured internals, human externals.** Inside the process: typed data, typed exceptions. At the edges (user-facing replies, logs for humans): prose.
+6. **Fail loud, learn quiet.** Silent failures are the enemy — they break the feedback loop. Errors announce themselves, land in logs, and persist to memory.
+7. **User overrides win.** Learned defaults are suggestions. User instructions are law. Always.
+8. **Safety is not optional.** Deletes, pushes, system changes, credential access — gated, logged, reviewable. A fast mistake is still a mistake.
+9. **Extend, don't modify.** New capability = new tool, new channel, new migration. Don't crack open stable modules to bolt features on.
+10. **Earn trust through transparency.** She shows her work. Every turn, every tool call, every stored fact is inspectable SQL.
+
+---
+
+## The Architecture
+
+Three concentric rings.
+
+**Identity** (`md/`, optional) — markdown files that load into the system prompt. This is her personality, her values, her knowledge of the humans in her world. Ship-time; ships empty; users add their own.
+
+**Memory** (`data/aisha.db` + `data/chroma/`) — the part of her that persists. Conversations stored verbatim with 4 indices + FTS5. Knowledge as a temporal RDF graph with validity windows. Per-user profiles maintained passively. A namespaced scratchpad for what she's learned about her own performance. ChromaDB is a derived index — SQLite is canonical, always.
+
+**Surfaces** (`aisha/channels/`) — thin IO layers. A channel's only job is to translate its transport (WebSocket, webhook, long-poll, stdin) into a call to `aisha.core.chat.send()`. Same brain, many doors.
+
+Tools (`aisha/forge/`) ride on top. Small, curated, risk-tagged — she calls them only when passive recall can't answer the question.
+
+---
+
+## Engineering Rules
 
 1. **Plan before code.** Organize scattered input into a coherent plan, align, then execute.
 2. **Test first.** `tests/` uses `unittest.TestCase`. Add a failing test before the fix.
-3. **Reuse.** If `memory.kv_*` fits, use it before inventing a table. If `knowledge_add` fits, use it before adding a column.
-4. **Migrations are append-only.** Add `data/migrations/NNN_description.sql`. Number must exceed current `PRAGMA user_version`. Never edit an applied migration.
-5. **Keep this file in sync** when you add, move, or delete files.
+3. **SQLite is truth.** Never store state only in Chroma, only in memory, or only in a cache. If it didn't hit SQLite, it didn't happen.
+4. **One memory API.** [`aisha/core/memory.py`](aisha/core/memory.py) is the only module that touches SQL. Add functions there instead of opening connections elsewhere.
+5. **Typed exceptions only.** `GatewayError`, `StoreError`, `MemoryError`. Never bare `RuntimeError`. Never catch strings.
+6. **Always log.** `logging.getLogger(__name__)` to stderr + `logs/aisha.log`. No silent failures. No `print()` for diagnostics.
+7. **Graceful shutdown.** Every exit path clean; every shutdown step individually `try/except`'d. No busy-loops.
+8. **Soft delete only.** Invalidate, flag, close a validity window. Never `DELETE`. History is the audit trail.
+9. **Migrations are append-only.** Add `data/migrations/NNN_description.sql` where `NNN` exceeds the current `PRAGMA user_version`. Never edit an applied migration.
+10. **Reuse before invent.** If `memory.kv_*` fits, use it. If `knowledge_add` fits, use it. Don't add a new table or a new tool just because you could.
+11. **Keep this file in sync** when you add, move, or delete files.
 
 ---
 
@@ -77,24 +114,24 @@ aishav5/
 │   │   ├── chat.py          # REPL + send() + tool-use loop
 │   │   ├── observer.py      # passive per-message profile updates
 │   │   ├── profiling.py     # UserProfile derivation (style, topics, facts)
-│   │   └── narrator.py      # optional background commentary (Mistral, OFF by default)
-│   ├── forge/               # model-callable tools (each one earns its slot)
+│   │   └── narrator.py      # optional Mistral-backed commentary (OFF by default)
+│   ├── forge/               # model-callable tools
 │   │   ├── registry.py      # Tool dataclass + routing/risk metadata
 │   │   ├── pptx_tool.py     # generate .pptx
 │   │   ├── docx_tool.py     # generate .docx
 │   │   ├── pdf_tool.py      # generate / convert .pdf
-│   │   ├── filetool.py      # read/write/search/upload files
-│   │   └── shell_tool.py    # allowlisted shell commands
+│   │   ├── filetool.py      # read/write/search/upload
+│   │   └── shell_tool.py    # allowlisted shell
 │   └── channels/            # IO surfaces — one file per channel
-│       ├── slack.py             # Socket Mode listener
-│       ├── whatsapp.py          # Twilio REST send helper
-│       ├── whatsapp_listener.py # Twilio webhook listener
-│       └── telegram.py          # long-poll Bot API
+│       ├── slack.py
+│       ├── whatsapp.py
+│       ├── whatsapp_listener.py
+│       └── telegram.py
 ├── data/
 │   ├── aisha.db             # SQLite (gitignored)
 │   ├── chroma/              # vector index (gitignored)
 │   └── migrations/          # 001_initial.sql, 002_temporal_triples.sql, 003_tool_fingerprint.sql
-├── md/                      # (optional) identity files — SOUL, VALUES, PRINCIPLES, PERSONALITY, HUMANS
+├── md/                      # (optional, user-supplied) identity files
 ├── tests/
 └── logs/aisha.log
 ```
@@ -103,60 +140,38 @@ aishav5/
 
 ## Memory API
 
-Everything below lives in [`aisha/core/memory.py`](aisha/core/memory.py). No other module should open a SQL cursor.
+[`aisha/core/memory.py`](aisha/core/memory.py) is the only module that touches SQL.
 
-**Conversations**
-- `record(role, content, *, source, user_id=None, meta=None) -> int`
-- `history(source=..., user_id=..., limit=...)`
-- `context_window(source=..., user_id=..., limit=...)`
-- `search(query, *, limit=20)` — FTS5 BM25
-- `conversation_stats()`
-- `get_turn(row_id)`, `update_meta(row_id, patch)`
+**Conversations** — `record`, `history`, `context_window`, `search` (FTS5 BM25), `conversation_stats`, `get_turn`, `update_meta`
 
-**Knowledge graph (temporal)**
-- `knowledge_add(subject, predicate, object, *, confidence=1.0, source=None)`
-- `knowledge_invalidate(id_or_triple)` — sets `valid_to`, preserves history
-- `knowledge_supersede(old_triple, new_object)` — atomic close + open
-- `knowledge_query(subject=..., predicate=..., object=..., as_of=None)`
-- `knowledge_about(entity, as_of=None)` — open triples at a moment
-- `knowledge_timeline(entity)` — every triple, ordered by validity
-- `knowledge_top(limit=30)` — highest-confidence open triples
-- `knowledge_stats()`
+**Knowledge graph (temporal)** — `knowledge_add` (with confidence), `knowledge_invalidate`, `knowledge_supersede`, `knowledge_query` (with `as_of`), `knowledge_about`, `knowledge_timeline`, `knowledge_top`, `knowledge_stats`
 
-**Entities / users / scratchpad**
-- `entity_add(name, entity_type, properties=None)`
-- `user_get(user_id)`, `user_set(user_id, profile)`, `user_update(user_id, patch)`, `users_list()`
-- `kv_get(namespace, key, default=None)`, `kv_set(namespace, key, value)`, `kv_all(namespace)`
+**Entities / users / scratchpad** — `entity_add`, `user_get/set/update`, `users_list`, `kv_get/set/all`
 
----
-
-## Schema Changes
-
-Add `data/migrations/NNN_description.sql`. The number must exceed the current `PRAGMA user_version`. Never edit an applied migration. Ship both the up migration and a test that proves the new schema accepts old data.
+Facts have validity windows. Supersede, don't overwrite. Timeline is queryable.
 
 ---
 
 ## Channels
 
-A channel is one file. It implements `run()`, builds a `source` string (e.g. `"telegram:<chat_id>"`), and calls `aisha.core.chat.send(text, source=source, user_id=..., display_name=...)`. Memory routing is automatic — same `source` string across turns means the same conversation.
+A channel is one file. It implements `run()`, builds a `source` string (e.g. `"telegram:<chat_id>"`), and calls `aisha.core.chat.send(text, source=source, user_id=..., display_name=...)`. Memory routing is automatic.
 
 Adding a channel:
 
 1. Create `aisha/channels/<name>.py` with `run()`.
-2. Add a `--<name>` flag in `aisha/__main__.py`.
+2. Wire a `--<name>` flag in `aisha/__main__.py`.
 3. Add tokens to `.env.example`.
-4. Add a `make <name>` target to `Makefile`.
+4. Add a `make <name>` target to the `Makefile`.
 
 ---
 
 ## Config
 
-See `.env.example`. All env vars are read in `aisha/core/config.py`.
+All env vars are read in `aisha/core/config.py`. See `.env.example` for the full list.
 
 | Var | Default | Purpose |
 |-----|---------|---------|
 | `COMPLETION_PROXY_URL` | `http://127.0.0.1:9878` | Proxy endpoint (routes to Claude) |
-| `COMPLETION_PROXY_TIMEOUT` | `300` | Seconds |
 | `AISHA_MODEL` | `claude-sonnet-4-5` | Model name |
 | `AISHA_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | ChromaDB embedder |
 | `AISHA_MAX_CONTEXT_TURNS` | `40` | Context window cap |
@@ -179,35 +194,26 @@ See `.env.example`. All env vars are read in `aisha/core/config.py`.
 
 ---
 
-## Identity
-
-[`md/`](md/) is an optional directory. If present, markdown files are concatenated into the system prompt in this order:
-
-```
-SOUL → VALUES → PRINCIPLES → PERSONALITY → HUMANS
-```
-
-Missing files are skipped silently. No identity files ship by default — aisha starts with an empty system prompt. Drop your own files into `md/` to shape her behavior without touching code. Call `aisha.core.identity.reload()` after edits.
-
----
-
 ## Contributing
 
-We welcome bug fixes, performance improvements, new channels, better memory semantics, documentation, and test coverage.
+We welcome bug fixes, performance improvements, new channels, better memory semantics, tools that earn their slot, documentation, and tests.
 
-We do not accept:
+We don't accept:
 
 - Storing conversation content only in Chroma (SQLite is truth).
-- Features that require telemetry, phone-home, or a cloud dependency for core memory operations.
-- Hard-delete of knowledge triples or conversation rows (invalidate / flag instead).
+- Telemetry, phone-home, or cloud dependencies for core memory.
+- Hard-delete of knowledge triples or conversation rows (invalidate instead).
 - Tools that duplicate what passive retrieval already does.
-- Shortcuts that bypass the migration system.
+- Shortcuts around the migration system.
+- Code that makes her sound like a corporate chatbot.
+
+---
 
 ## Key Files for Common Tasks
 
 - **Adding a tool**: `aisha/forge/<name>_tool.py` + register in `aisha/forge/registry.py`
-- **Changing the prompt**: edit `md/` (optional identity files) — no code changes needed
-- **New memory query**: add to `aisha/core/memory.py` — nothing else touches SQL
+- **Shaping her voice**: drop markdown into `md/` — no code changes needed
+- **New memory query**: add to `aisha/core/memory.py`
 - **Schema change**: `data/migrations/NNN_description.sql`
-- **New channel**: `aisha/channels/<name>.py` (see "Channels" above)
+- **New channel**: `aisha/channels/<name>.py`
 - **Config var**: `aisha/core/config.py` + `.env.example`
