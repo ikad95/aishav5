@@ -17,7 +17,6 @@ aisha is a single process with four moving parts:
 
 - **Chat loop** — streams Claude responses, runs tools, records every turn.
 - **Memory** — SQLite (conversations, knowledge triples, users, scratchpad) + ChromaDB (semantic recall). Nothing leaves your machine.
-- **Identity** — drop markdown files into `md/` (e.g. `VALUES.md`, `PERSONALITY.md`) and they concatenate into the system prompt. Empty by default.
 - **Channels** — terminal REPL by default, plus Slack (Socket Mode), WhatsApp (Twilio webhook), and Telegram (long-polling). Same brain, different surfaces.
 
 Tools are registered, risk-tagged, and auditable. The default set is small on purpose: full-text search over history, a knowledge-graph writer, file read/write, shell commands, web fetch, and document generation (`.pptx` / `.docx` / `.pdf`).
@@ -57,16 +56,6 @@ All state lives under [`data/`](data/):
 - `migrations/` — numbered SQL files, applied once, never edited in place.
 
 The memory API is [`aisha/core/memory.py`](aisha/core/memory.py). It is the only module that touches SQL — every other module goes through it.
-
-## Identity
-
-Create a `md/` directory at the repo root and drop markdown files into it. Each file's contents are loaded into the system prompt (missing files are skipped). The default load order is:
-
-```
-SOUL → VALUES → PRINCIPLES → PERSONALITY → HUMANS
-```
-
-No identity files ship by default — aisha starts with an empty system prompt. Add your own to shape her behavior without touching code.
 
 ## Channels
 
