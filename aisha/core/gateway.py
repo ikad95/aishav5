@@ -1,8 +1,15 @@
-"""Single completion-proxy backend (urllib).
+"""Gateway to Claude.
 
-Every Claude call goes through ``complete_with_tools``: it returns the raw
-Anthropic response dict so the caller (chat.py's tool-use loop) can handle
-``stop_reason == "tool_use"``. Vision helpers build image content blocks.
+Two modes, picked automatically:
+
+1. **Direct** — if ``ANTHROPIC_API_KEY`` is set, call ``api.anthropic.com``
+   directly. The simplest path; no extra processes to run.
+2. **Proxy** — if ``COMPLETION_PROXY_URL`` is set, POST to that URL instead.
+   Useful when a local proxy adds caching, auth rewriting, or model routing.
+
+Direct mode wins if both are set. Every call returns the raw Anthropic
+response dict so ``chat.py``'s tool-use loop can handle ``stop_reason ==
+"tool_use"``.
 """
 from __future__ import annotations
 
@@ -19,6 +26,9 @@ from urllib.request import Request, urlopen
 from .config import settings
 
 log = logging.getLogger(__name__)
+
+_ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+_ANTHROPIC_VERSION = "2023-06-01"
 
 def _narrate_retry(status: int, attempt: int) -> None:
     # Lazy import to avoid circular dep: narrator → config → settings → gateway.
@@ -60,7 +70,6 @@ def complete_with_tools(
     Used by the tool-use loop in ``chat.py`` — caller is responsible for
     interpreting ``stop_reason`` and appending tool_use / tool_result blocks.
     """
-    base = settings.completion_proxy_url.rstrip("/")
     payload_d: dict = {
         "model": model or settings.model,
         "max_tokens": max_tokens,
@@ -70,12 +79,25 @@ def complete_with_tools(
     if tools:
         payload_d["tools"] = tools
     payload = json.dumps(payload_d).encode("utf-8")
-    req = Request(
-        f"{base}/v1/messages",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST",
-    )
+
+    if settings.anthropic_api_key:
+        url = _ANTHROPIC_URL
+        headers = {
+            "content-type": "application/json",
+            "x-api-key": settings.anthropic_api_key,
+            "anthropic-version": _ANTHROPIC_VERSION,
+        }
+    elif settings.completion_proxy_url:
+        url = f"{settings.completion_proxy_url.rstrip('/')}/v1/messages"
+        headers = {"content-type": "application/json"}
+    else:
+        raise GatewayError(
+            0,
+            "No Claude credentials configured. Set ANTHROPIC_API_KEY in .env "
+            "(or COMPLETION_PROXY_URL if you're running a proxy).",
+        )
+
+    req = Request(url, data=payload, headers=headers, method="POST")
     t = timeout if timeout is not None else settings.completion_proxy_timeout
     # Retry transient upstream failures with exponential backoff + jitter.
     # These requests are non-streaming and non-mutating on the server side, so

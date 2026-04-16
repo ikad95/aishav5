@@ -24,11 +24,11 @@ CHROMA_DIR = DATA_DIR / "chroma"
 
 
 class Settings:
-    completion_proxy_url: str = os.getenv("COMPLETION_PROXY_URL", "http://127.0.0.1:9878")
+    anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
+    completion_proxy_url: str = os.getenv("COMPLETION_PROXY_URL", "")
     completion_proxy_timeout: int = int(os.getenv("COMPLETION_PROXY_TIMEOUT", "300"))
     completion_proxy_retries: int = int(os.getenv("COMPLETION_PROXY_RETRIES", "3"))
-    anthropic_api_key: Optional[str] = os.getenv("ANTHROPIC_API_KEY")
-    model: str = os.getenv("AISHA_MODEL", "claude-sonnet-4-5")
+    model: str = os.getenv("AISHA_MODEL", "claude-sonnet-4-6")
 
     slack_app_token: Optional[str] = os.getenv("SLACK_APP_TOKEN")
     slack_bot_token: Optional[str] = os.getenv("SLACK_BOT_TOKEN")

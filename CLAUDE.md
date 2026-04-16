@@ -200,8 +200,9 @@ All env vars are read in `aisha/core/config.py`. See `.env.example` for the full
 
 | Var | Default | Purpose |
 |-----|---------|---------|
-| `COMPLETION_PROXY_URL` | `http://127.0.0.1:9878` | Proxy endpoint (routes to Claude) |
-| `AISHA_MODEL` | `claude-sonnet-4-5` | Model name |
+| `ANTHROPIC_API_KEY` | — | Direct API key. Simplest setup. |
+| `COMPLETION_PROXY_URL` | — | Alternative: route through a local proxy. Direct mode wins if both set. |
+| `AISHA_MODEL` | `claude-sonnet-4-6` | Model name |
 | `AISHA_EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | ChromaDB embedder |
 | `AISHA_MAX_CONTEXT_TURNS` | `40` | Context window cap |
 | `AISHA_LOG_LEVEL` | `INFO` | Root logger |

@@ -104,19 +104,22 @@ The brain is stateless at the process boundary — tools don't hold state, memor
 git clone https://github.com/ikad95/aishav5.git aisha
 cd aisha
 make install
-cp .env.example .env   # fill in proxy URL + any channel tokens
 ```
-
-aisha talks to Claude through a completion proxy. Point `COMPLETION_PROXY_URL` at your own proxy or at Anthropic directly.
 
 ## Run
 
 ```bash
-make repl        # interactive REPL
-make slack       # Slack Socket Mode listener
-make whatsapp    # WhatsApp webhook
-make telegram    # Telegram long-poll bot
-make test        # pytest
+export ANTHROPIC_API_KEY=sk-ant-...   # or put it in .env
+make repl                              # you're talking to her
+```
+
+That's it. No proxy, no sidecar, no cloud. The first run creates `data/aisha.db` and runs migrations automatically.
+
+```bash
+make slack        # Slack Socket Mode (needs SLACK_*)
+make whatsapp     # WhatsApp via Twilio (needs TWILIO_*)
+make telegram     # Telegram bot (needs TELEGRAM_BOT_TOKEN)
+python -m aisha --doctor    # sanity-check config + round-trip Claude
 ```
 
 ## Layout
@@ -136,7 +139,7 @@ data/
 ## Requirements
 
 - Python 3.10+
-- A completion proxy reachable at `COMPLETION_PROXY_URL` (default `http://127.0.0.1:9878`)
+- An `ANTHROPIC_API_KEY` (or a proxy URL, if you prefer routing through your own)
 - ~300 MB disk for the default embedding model (`all-MiniLM-L6-v2`)
 
 ## License

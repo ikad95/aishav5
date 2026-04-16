@@ -47,17 +47,45 @@ def _setup_logging() -> None:
     conv.propagate = False
 
 
+_SETUP_HINT = """
+aisha needs a Claude credential to talk to. Pick one:
+
+  1. Anthropic API key (simplest):
+       echo 'ANTHROPIC_API_KEY=sk-ant-...' >> .env
+
+  2. Local completion proxy:
+       echo 'COMPLETION_PROXY_URL=http://127.0.0.1:9878' >> .env
+
+Then run this again.
+"""
+
+
+def _check_credentials() -> bool:
+    if settings.anthropic_api_key or settings.completion_proxy_url:
+        return True
+    print(_SETUP_HINT, file=sys.stderr)
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="aisha")
     parser.add_argument("--slack", action="store_true", help="run the Slack listener")
     parser.add_argument("--whatsapp", action="store_true", help="run the WhatsApp webhook listener")
     parser.add_argument("--telegram", action="store_true", help="run the Telegram bot (polling)")
     parser.add_argument("--debug", action="store_true", help="verbose logging")
+    parser.add_argument("--doctor", action="store_true", help="check config and exit")
     args = parser.parse_args()
 
     if args.debug:
         settings.log_level = "DEBUG"
     _setup_logging()
+
+    if args.doctor:
+        from .core import doctor
+        return doctor.run()
+
+    if not _check_credentials():
+        return 1
 
     from .core import store
     store.connect()
